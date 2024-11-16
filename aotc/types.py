@@ -68,9 +68,9 @@ class ArtifactConfig:
   # All files in this folder will be uploaded as-is to {gcs_dir} on each node
   # where files exist. Care should be taken to name files to be unique across
   # all nodes as to avoid name conflicts on GCS.
-  local_root: Optional[str] = "/tmp/workload-artifacts"
+  local_root: Optional[str] = None
   # default: {local_root}/<experiment_id>/<run_id>
-  local_dir: Optional[str] = None
+  local_dir: Optional[str] = "/artifacts"
 
   # Whether to collect tensorboard to /tmp ({local_dir}/tensorboard) during the
   # run. The tensorboard will be copied to GCS after the run completes.

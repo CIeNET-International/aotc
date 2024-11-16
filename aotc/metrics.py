@@ -101,6 +101,10 @@ class WorkloadMetrics(utils.Unionable):
   # In case of workload or extraction failures, these may not be set
   num_iterations: Optional[int] = None
   warmup_iter: Optional[int] = 0
+  global_batch_size: Optional[int] = None
+  seq_length: Optional[int] = None
+  precision: Optional[str] = None
+  optimizer: Optional[str] = None
   iteration_time: Optional[MetricStats] = None
   # memory usage on the device (likely from one arbitrary device)
   mem_usage_bytes: Optional[MetricSimpleStats] = None
@@ -110,7 +114,6 @@ class WorkloadMetrics(utils.Unionable):
   samples_for_convergence: Optional[int] = None
   metrics_accuracy_1: Optional[MetricIterStats] = None
   metrics_accuracy_2: Optional[MetricIterStats] = None
-
 
 def get_task_time_metrics(
     time_taken: List[Any],

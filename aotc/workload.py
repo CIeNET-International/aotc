@@ -38,17 +38,14 @@ class WorkloadTask(abc.ABC):
     raise NotImplementedError
 
   @abc.abstractmethod
-  def _run_workload(self, task_metadata: types.DistributedTaskInfo) -> dict[str, Any]:
+  def _run_workload(
+      self, task_metadata: types.DistributedTaskInfo
+  ) -> dict[str, Any]:
     """Runs remotely to execute the workload"""
     raise NotImplementedError
 
   # Do not override!
   def prep_node_entry(self, task_metadata: types.DistributedTaskInfo) -> None:
-    logging.basicConfig(
-        format="%(asctime)s %(levelname)-8s %(message)s",
-        level=logging.INFO,
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
     self._prep_node(task_metadata)
 
   # Do not override!
@@ -57,11 +54,6 @@ class WorkloadTask(abc.ABC):
       artifact_config: types.ArtifactConfig,
       task_metadata: types.DistributedTaskInfo,
   ) -> types.WorkloadTaskResult:
-    logging.basicConfig(
-        format="%(asctime)s %(levelname)-8s %(message)s",
-        level=logging.INFO,
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
 
     ex = None
     run_result: Dict[str, Any] = {}
@@ -73,7 +65,7 @@ class WorkloadTask(abc.ABC):
       time_taken = time.perf_counter() - start
     except Exception as e:  # pylint: disable=broad-exception-caught
       ex = e
-      logging.exception("Failed to run workload: %s", e)
+      print(f"Failed to run workload: {e}")
 
     # Cleanup and artifact collection
     if artifact_config.gcs_enabled:
@@ -100,37 +92,23 @@ class WorkloadTask(abc.ABC):
     ):
       # Export only if artifact files exist
       files = os.listdir(artifact_config.local_dir)
-      logging.info(
-          "Exporting %d artifacts on rank %d from %s to GCS %s, top level files"
-          " are: %s",
-          len(files),
-          comm.rank,
-          artifact_config.local_dir,
-          artifact_config.gcs_dir,
-          str(files),
+      print(
+          f"Exporting {len(files)} artifacts on rank {comm.rank} from"
+          f" {artifact_config.local_dir} to GCS {artifact_config.gcs_dir}, top"
+          f" level files are: {str(files)}"
       )
 
       for f in files:
         local_path = os.path.join(str(artifact_config.local_dir), f)
         if os.path.isdir(local_path) and not os.listdir(local_path):
-          logging.info("Skipping upload of empty directory %s", local_path)
+          print(f"Skipping upload of empty directory local_path")
           continue
-        logging.info("Exporting %s to GCS %s", f, artifact_config.gcs_dir)
+        print(f"Exporting {f} to GCS {artifact_config.gcs_dir}")
         subprocess.run(
             f'gsutil -m cp -r "{local_path}" "{artifact_config.gcs_dir}/"',
             check=False,
             shell=True,
         )
-
-
-  # Do not override!
-  def post_process_entry(self) -> None:
-    logging.basicConfig(
-        format="%(asctime)s %(levelname)-8s %(message)s",
-        level=logging.INFO,
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
-    pass
 
 
 # Interface for the parts of the workload that execute locally in the controller

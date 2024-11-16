@@ -14,22 +14,20 @@
 #
 import copy
 import dataclasses
+import json
 import logging
-import omegaconf
 import os
 import pprint
 import traceback
-from typing import Any, List, Dict, Optional
-import yaml
-
-from aotc import utils
+from typing import List, Optional
 from aotc import gpu_utils
-from aotc import workload
-from aotc import types
-from aotc import metrics as aotc_metrics
 from aotc import metric_extraction
-
-
+from aotc import metrics as aotc_metrics
+from aotc import types
+from aotc import utils
+from aotc import workload
+import omegaconf
+import yaml
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +35,26 @@ logger = logging.getLogger(__name__)
 @dataclasses.dataclass
 class NemoConfig:
   conf: omegaconf.dictconfig.DictConfig
+
+  def update_from_env_variables(self, env_variables):
+    """Updates the NemoConfig from a list of environment variables.
+
+    Args:
+      env_variables: A list of environment variables in the format "KEY=VALUE".
+    """
+    for key, value in env_variables.items():
+      if key.startswith("WORKLOAD_"):
+        try:
+          # Construct the Python code to execute (treat value as a string)
+          exec_str = f"self.conf.{key.split('_', 1)[1]} = '{value}'"
+          logger.info(
+              f"Error updating config from environment variable: {exec_str}"
+          )
+          exec(exec_str)
+        except Exception as e:
+          logger.error(
+              f"Error updating config from environment variable '{key}': {e}"
+          )
 
 
 @dataclasses.dataclass
@@ -51,6 +69,7 @@ def get_nemo_env() -> dict[str, str]:
       "NVTE_BWD_LAYERNORM_SM_MARGIN": "8",
       "PYTHONFAULTHANDLER": "1",  # print stacktrace on python segfault
   }
+
 
 # Create WorkloadInfo objects
 def create_nemo_workload_info(
@@ -123,7 +142,7 @@ def get_nemo_config(base_config: types.WorkloadConfig) -> NemoWorkloadConfig:
     )
     conf.exp_manager.exp_dir = base_config.artifact_config.local_dir
   base_config.artifact_config.tensorboard_dir = (
-      base_config.artifact_config.gcs_dir + "/log"
+      base_config.artifact_config.gcs_dir + "/tensorboard"
   )
 
   return NemoWorkloadConfig(
@@ -202,15 +221,12 @@ class NemoWorkloadTask(workload.WorkloadTask):
   def __init__(self, config: NemoWorkloadConfig):
     self._config: NemoWorkloadConfig = config
 
-  def _prep_node(self, distributed_task_info: types.DistributedTaskInfo) -> None:
-    logging.basicConfig(
-        format="%(asctime)s %(levelname)-8s %(message)s",
-        level=logging.INFO,
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
-    logging.info("Preparing node for NeMo")
+  def _prep_node(
+      self, distributed_task_info: types.DistributedTaskInfo
+  ) -> None:
+    print("Preparing node for NeMo")
     self._predownload_vocab()
-    logging.info("Vocab downloaded")
+    print("Vocab downloaded")
 
     gpu_utils.enable_nvidia_persistence()
 
@@ -233,9 +249,9 @@ class NemoWorkloadTask(workload.WorkloadTask):
           "gpt2-merges.txt",
       )
     else:
-      logging.warning(
-          "Not downloading because vocab file is not gpt2: %s",
-          conf.model.tokenizer.vocab_file,
+      print(
+          "Not downloading because vocab file is not gpt2:"
+          f" {conf.model.tokenizer.vocab_file}"
       )
 
   def _dump_configs(self, local_dir: str) -> None:
@@ -251,7 +267,9 @@ class NemoWorkloadTask(workload.WorkloadTask):
         f=os.path.join(local_dir, "nemo_config.yaml"),
     )
 
-  def _run_workload(self, distributed_task_info: types.DistributedTaskInfo) -> dict[str, float]:
+  def _run_workload(
+      self, distributed_task_info: types.DistributedTaskInfo
+  ) -> dict[str, float]:
 
     cfg = self._config.nemo.conf
     cfg.trainer.devices = distributed_task_info.num_tasks_per_node
@@ -289,11 +307,10 @@ class NemoWorkloadTask(workload.WorkloadTask):
     # Note quite sure what is happening, but the random seems to help
     # time.sleep(random.uniform(2,10))
     # time.sleep(4 * (rank % tasks_per_node))
-    time.sleep(4*distributed_task_info.local_rank)
+    time.sleep(4 * distributed_task_info.local_rank)
 
     os.environ["LOCAL_RANK"] = str(distributed_task_info.local_rank)
-    os.environ["OMP_NUM_THREADS"]=str(12)
-
+    os.environ["OMP_NUM_THREADS"] = str(12)
 
     import torch
     import torch.multiprocessing as mp
@@ -321,11 +338,19 @@ class NemoWorkloadTask(workload.WorkloadTask):
     )
 
     trainer.fit(model)
-    return {
+
+    results = {
         "flops": flops,
         "global_batch_size": batch_size,
         "seq_length": seq_length,
     }
+
+    if distributed_task_info.rank == 0:
+      output_file = os.path.join(str(local_dir), "results.json")
+      with open(output_file, "w") as f:
+        json.dump(results, f)
+
+    return results
 
 
 class NemoWorkload(workload.Workload):
@@ -354,10 +379,12 @@ class NemoWorkload(workload.Workload):
           "No tensorboard dir specified, skipping metric extraction"
       )
       return None
-    extract_config = metric_extraction.tensorboard_metrics.TensorboardMetricExtractionConfig(
-        stats_config=self.config.workload.metrics_config,
-        iteration_time_metric="train_step_timing in s",
-        step_name="step",
+    extract_config = (
+        metric_extraction.tensorboard_metrics.TensorboardMetricExtractionConfig(
+            stats_config=self.config.workload.metrics_config,
+            iteration_time_metric="train_step_timing in s",
+            step_name="step",
+        )
     )
     try:
       reader = metric_extraction.tensorboard.TensorboardReader(tensorboard_dir)
@@ -369,38 +396,41 @@ class NemoWorkload(workload.Workload):
         )
         extract_config.throughput_metric = "throughput"
 
-      metrics = metric_extraction.tensorboard_metrics.extract_tensorboard_metrics(
-          tensorboard_dir, extract_config=extract_config, df=df
+      metrics = (
+          metric_extraction.tensorboard_metrics.extract_tensorboard_metrics(
+              tensorboard_dir, extract_config=extract_config, df=df
+          )
       )
       logging.info("Extracted metrics: %s", metrics)
       return metrics
     except Exception as e:
-      logging.error(
+      logger.error(
           "Failed to extract metrics from tensorboard file %s: %s",
           tensorboard_dir,
           repr(e),
       )
-      logging.error(f"Traceback:\n{traceback.format_exc()}")
+      logger.error(f"Traceback:\n{traceback.format_exc()}")
       return None
-
 
   def extract_metrics(
       self, results: List[types.WorkloadTaskResult]
   ) -> aotc_metrics.WorkloadMetrics:
     """From nemo.NemoPretrainingWorkload.get_metrics()"""
-    metrics = aotc_metrics.get_task_time_metrics([r.time_taken for r in results])
+    metrics = aotc_metrics.get_task_time_metrics(
+        [r.time_taken for r in results]
+    )
 
     # only care about rank 0.
     task_result = results[0]
     model_params = types.ModelParams(
-        global_batch_size=task_result.run_result.get("global_batch_size",1),
-        seq_length=task_result.run_result.get("seq_length",1),
+        global_batch_size=task_result.run_result.get("global_batch_size", 1),
+        seq_length=task_result.run_result.get("seq_length", 1),
     )
-    world_size = task_result.run_result.get("world_size",1)
+    world_size = task_result.run_result.get("world_size", 1)
 
     # Get tensorboard metrics
     tb_metrics = self._get_tensorboard_metrics(
-        flops=task_result.run_result.get("flops",0), world_size=world_size
+        flops=task_result.run_result.get("flops", 0), world_size=world_size
     )
     if tb_metrics:
       metrics = metrics | tb_metrics
@@ -411,4 +441,11 @@ class NemoWorkload(workload.Workload):
       metrics.tokens_per_sec = aotc_metrics.MetricMean(
           mean=tokens_per_iter / metrics.iteration_time.mean
       )
+
+    # Add some metrics to write to bigquery table
+    metrics.global_batch_size = model_params.global_batch_size
+    metrics.seq_length = model_params.seq_length
+    metrics.precision = self.config.nemo.conf.trainer.precision
+    metrics.optimizer = self.config.nemo.conf.model.optim.name
+
     return metrics

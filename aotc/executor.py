@@ -37,12 +37,16 @@ class StandaloneExecutor:
   def __init__(self):
     self.standalone_task: workload.WorkloadTask
 
+    # Maybe once a Mantaray run starts, it can generate a yaml with all these
+    # values that can be added to helm template and read in
+
     ##################### Workload Info #####################
     framework = os.environ["FRAMEWORK"]
     model = os.environ["MODEL"]
     num_steps = int(os.environ["NUM_STEPS"])
     warmup_steps = int(os.environ["WARMUP_STEPS"])
     profiler_steps = int(os.environ["PROFILER_STEPS"])
+    workload_arguments = os.environ.get("WORKLOAD_ARGUMENTS", "").split()
 
     ###################### Job Config #######################
     config_dir = os.environ["JOB_CONFIG_DIR"]
@@ -61,10 +65,10 @@ class StandaloneExecutor:
     ################### Experiment Config ###################
     exp_name = os.environ["EXP_NAME"]
     output_config_path = os.getenv("OUTPUT_CONFIG_PATH",os.path.abspath(
-      "/workspace/output.yaml" 
+      "/workspace/output.yaml"
       )
     )
-
+    self.now = datetime.datetime.fromtimestamp(int(os.environ["JOB_TIMESTAMP"]))
     # create experiment config
     self.experiment_config = workload_utils.experiment_config(
       name=exp_name,
@@ -89,12 +93,12 @@ class StandaloneExecutor:
       ),
     )
     # Create Artifact Config Object
-    gcs_root = os.getenv("GCS_ROOT", "/tmp")
+    gcs_root = "gs://" + os.getenv("GCS_BUCKET","")
     gcs_enabled = bool(os.getenv("GCS_ENABLED", True))
-    gcs_dir = os.getenv("GCS_DIR")
+    gcs_dir = os.path.join(gcs_root,os.getenv("GCS_DIR",f"{exp_name}/{self.now.strftime('%Y-%m-%d_%H:%M:%S')}"))
     tensorboard_dir = os.getenv("TENSORBOARD_DIR")
     local_root = os.getenv("LOCAL_ROOT","/tmp/workload-artifacts")
-    local_dir = os.getenv("LOCAL_DIR")
+    local_dir = os.getenv("LOCAL_DIR",f"{local_root}/results")
     tensorboard_tmp = bool(os.getenv("TENSORBOARD_TEMP", True))
     tensorboard_rank = int(os.getenv("TENSORBOARD_RANK",0))
     json_str = os.environ.get("COLLECT_DIRS","{}")
@@ -135,13 +139,28 @@ class StandaloneExecutor:
       self.base_workload_config: types.WorkloadConfig = workload_utils.create_workload_config(self.workload_info,
                                                                           self.experiment_config.output.artifact_config,
                                                                           exp_name,
-                                                                          datetime.datetime.now())
+                                                                          self.now)
 
       # create standlone task
-      self.standalone_task = nemo.NemoWorkload(self.base_workload_config).get_workload_task()
+      self.workload = nemo.NemoWorkload(self.base_workload_config)
+      self.standalone_task = self.workload.get_workload_task()
 
     else:
       raise NotImplementedError
+
+  def _update_env_with_artifact_config_settings(self,env) -> Dict[str, str]:
+    env["GCS_ROOT"]=self.artifact_config.gcs_root
+    env["GCS_ENABLED"]=str(self.artifact_config.gcs_enabled)
+    env["GCS_DIR"]=self.artifact_config.gcs_dir
+    if self.artifact_config.tensorboard_dir:
+      env["TENSORBOARD_DIR"]=self.artifact_config.tensorboard_dir
+    env["LOCAL_ROOT"]=self.artifact_config.local_root
+    env["LOCAL_DIR"]=self.artifact_config.local_dir
+    env["TENSORBOARD_TMP"]=str(self.artifact_config.tensorboard_tmp)
+    env["TENSORBOARD_RANK"]=str(self.artifact_config.tensorboard_rank)
+    env["COLLECT_DIRS"]=json.dumps(self.artifact_config.collect_dirs)
+    return env
+
 
   def _log_result(self, result: Dict[str,float]):
     logger.info("_log_result not Implemented")
@@ -159,12 +178,16 @@ class StandaloneExecutor:
         for line in f:
             key, value = line.strip().split("=", 1)
             env[key] = value
+    env = self._update_env_with_artifact_config_settings(env)
     return env
 
   def run(self):
     # read environment variables
-    rank = int(os.getenv("RANK",0))
     local_rank = int(os.getenv("LOCAL_RANK",0))
+    gpus_per_node = int(os.environ["GPUS_PER_NODE"])
+    node_index = int(os.environ["JOB_COMPLETION_INDEX"])
+    rank = (node_index * gpus_per_node) + local_rank
+
     world_size = int(os.getenv("WORLD_SIZE",1))
     num_nodes = int(os.getenv("NNODES",1))
 
@@ -180,8 +203,7 @@ class StandaloneExecutor:
     # Create environment for all subprocesses
     env = self._create_env_for_subprocess()
 
-    gpus_per_node = int(os.environ["GPUS_PER_NODE"])
-    node_index = int(os.environ["JOB_COMPLETION_INDEX"])
+
     processes = []
     for local_rank in range(gpus_per_node):
       command = [

@@ -1,58 +1,73 @@
-
+# Copyright 2024 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
 run:
-  name: xx
-  results_dir: xx
+  name: mixtral_8x7b
+  #results_dir: ${base_results_dir}/${.name}
   time_limit: 01:00:00
   dependency: singleton
 trainer:
-  num_nodes: set-by-mantaray
-  devices: set-by-mantaray
+  devices: 8
   accelerator: gpu
   precision: bf16
   logger: false
   enable_checkpointing: false
   use_distributed_sampler: false
   max_epochs: null
-  max_steps: set-by-mantaray
+  max_steps: 50
   max_time: 05:23:30:00
   log_every_n_steps: 1
-  val_check_interval: null
-  limit_val_batches: 0.0
+  val_check_interval: 50
+  limit_val_batches: 32
   limit_test_batches: 50
   accumulate_grad_batches: 1
   gradient_clip_val: 1.0
+  enable_model_summary: false
 exp_manager:
-  exp_dir: null          # Set by mantaray
-  explicit_log_dir: null # Set by mantaray
+  exp_dir: null
   name: megatron_mixtral
   create_wandb_logger: false
+  #create_dllogger_logger: true
+  #dllogger_logger_kwargs:
+  #  verbose: true
+  #j  stdout: true
+  # json_file: "./dllogger.json"
   resume_if_exists: false
   resume_ignore_no_checkpoint: true
   create_checkpoint_callback: false
   checkpoint_callback_params:
     monitor: val_loss
-    save_top_k: 1
+    save_top_k: 10
     mode: min
     always_save_nemo: false
     save_nemo_on_train_end: false
-    filename: megatron_mixtral--{val_loss:.2f}-{step}-{consumed_samples}
-    model_parallel_size: 4
+    #filename: megatron_mixtral--{val_loss:.2f}-{step}-{consumed_samples}
+    #model_parallel_size: 4
   log_step_timing: true
   step_timing_kwargs:
     sync_cuda: true
     buffer_size: 5
-  log_global_rank_0_only: true
-  create_tensorboard_logger: true
 model:
   mcore_gpt: true
-  moe_grouped_gemm: true
+  moe_grouped_gemm: false
   moe_token_dispatcher_type: alltoall
   moe_aux_loss_coeff: 0.01
-  micro_batch_size: 1
+  micro_batch_size: 2
   global_batch_size: 1024
   rampup_batch_size: null
   tensor_model_parallel_size: 1
-  pipeline_model_parallel_size: 4
+  pipeline_model_parallel_size: 1
   expert_model_parallel_size: 8
   virtual_pipeline_model_parallel_size: null
   encoder_seq_length: 4096
@@ -89,14 +104,10 @@ model:
   num_moe_experts: 8
   attention_type: multihead
   share_embeddings_and_output_weights: false
-  overlap_p2p_comm: false
-  batch_p2p_comm: true
+  overlap_p2p_comm: true
+  batch_p2p_comm: false
   seq_len_interpolation_factor: null
   num_query_groups: 8
-  #tokenizer:
-  #  library: huggingface
-  #  type: mistralai/Mixtral-8x7B-v0.1
-  #  use_fast: true
   tokenizer:
     library: 'megatron'
     type: 'GPT2BPETokenizer'
@@ -110,9 +121,9 @@ model:
   fp32_residual_connection: false
   fp16_lm_cross_entropy: false
   megatron_amp_O2: true
-  grad_allreduce_chunk_size_mb: 32
+  grad_allreduce_chunk_size_mb: 125
   grad_div_ar_fusion: true
-  gradient_accumulation_fusion: false
+  gradient_accumulation_fusion: true
   bias_activation_fusion: true
   bias_dropout_add_fusion: true
   masked_softmax_fusion: false
@@ -138,18 +149,16 @@ model:
   fp8_interval: 1
   fp8_amax_history_len: 1024
   fp8_amax_compute_algo: max
+  fp8_params: true
   reduce_amax: true
   use_emha: false
   ub_tp_comm_overlap: false
   ub_tp_comm_overlap_cfg: null
   use_flash_attention: true
   nsys_profile:
-    enabled: false
-    start_step: 10
-    end_step: 10
-    ranks:
-    - 0
-    gen_shape: false
+    enabled: true
+    start_step: 10  # Global batch to start profiling
+    end_step: 12  # Global batch to end profiling
   optim:
     name: mcore_distributed_optim
     lr: 0.0001
@@ -162,23 +171,28 @@ model:
       warmup_steps: 636
       constant_steps: 11873
       min_lr: 1.0e-05
-    #grad_sync_dtype: bf16
-  gc_interval: 0
+    grad_sync_dtype: bf16
+    overlap_grad_sync: true
+    overlap_param_sync: true
+    contiguous_grad_buffer: true
+    contiguous_param_buffer: true
+  gc_interval: 100
   precision: bf16
   mcore_customization_config:
     new_decoder_architecture: false
     parallel_attention: false
   data:
-    data_impl: mock
-    #data_impl: mmap
-    splits_string: 98,1,1
+    data_impl: mock  # mmap
+    #splits_string: 99990,8,2
+    splits_string: 90,8,2
     seq_length: 4096
     skip_warmup: true
-    num_workers: 2
+    num_workers: 4
     dataloader_type: single
     reset_position_ids: false
     reset_attention_mask: false
     eod_mask_loss: false
-    index_mapping_dir: null
+    index_mapping_dir: null  # path to save index mapping .npy files, by default will save in the same location as data_prefix
     data_prefix: []
-  dist_ckpt_load_on_device: false
+  moe_pad_expert_input_to_capacity: true
+  moe_expert_capacity_factor: 1.0

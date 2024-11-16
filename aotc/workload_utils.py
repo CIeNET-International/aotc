@@ -16,6 +16,7 @@ import copy
 import datetime
 import omegaconf
 import os
+import uuid
 from urllib.request import DataHandler
 from aotc import types
 
@@ -31,7 +32,7 @@ def create_workload_config(
   run_name = f"{workload_info.framework}-{workload_info.model}"
   run_timestamp = datetime.datetime.now(tz=None).strftime("%Y-%m-%d_%H%M%S")
   user = os.environ.get("USER")
-  run_uid = f"{run_name}-{run_timestamp}"
+  run_uid = f"{run_name}-{run_timestamp}-{uuid.uuid4()}"
   run_info = types.RunInfo(
       uid=run_uid,
       experiment_id=name,
@@ -90,7 +91,7 @@ def get_workload_info(
     warmup_steps: int,
     profiler_steps: int,
     timeout: int,
-    profiler_rank: list[int] = [0]
+    profiler_rank: list[int] = []
 ):
   """ Helper function to create a workload config. """
 
