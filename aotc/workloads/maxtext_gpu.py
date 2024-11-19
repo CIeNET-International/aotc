@@ -192,7 +192,6 @@ class MaxTextGPUWorkload(workload.Workload):
     metrics.global_batch_size = model_params.global_batch_size
     metrics.seq_length = model_params.seq_length
     # If quantization is not present, return bf16
-    # Source https://screenshot.googleplex.com/8yo8TehBpNG5Tas
     if task_result.run_result.get("quantization", ""):
       metrics.precision = task_result.run_result.get("quantization")
     else:
