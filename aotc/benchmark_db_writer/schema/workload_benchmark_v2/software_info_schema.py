@@ -12,3 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+import dataclasses
+import datetime
+from typing import Optional
+
+
+@dataclasses.dataclass
+class SoftwareInfo:
+  software_id: str
+  ml_framework: str
+  os: str
+  training_framework: str
+  update_person_ldap: str
+  compiler: Optional[str] = None
+  description: Optional[str] = ""
+  update_timestamp: datetime.datetime = datetime.datetime.now()

@@ -13,8 +13,6 @@
 # limitations under the License.
 #
 import abc
-import copy
-import datetime
 import logging
 import os
 import subprocess
@@ -23,6 +21,13 @@ from typing import Any, Dict, List
 
 from aotc import metrics
 from aotc import types
+
+logging.basicConfig(
+    format="%(asctime)s %(levelname)-8s %(message)s",
+    level=logging.INFO,
+    datefmt="%Y-%m-%d %H:%M:%S"
+)
+logger = logging.getLogger(__name__)
 
 
 # Standalone workload task that is executed on a given node
@@ -58,6 +63,9 @@ class WorkloadTask(abc.ABC):
     ex = None
     run_result: Dict[str, Any] = {}
     time_taken: float = 0
+
+    logger.info("Is AOTC code taken from local repo: %s",
+            os.environ.get("aotc_from_local"))
     try:
       start = time.perf_counter()
       # run_result = self.run_task(task_metadata=task_metadata)
@@ -101,7 +109,7 @@ class WorkloadTask(abc.ABC):
       for f in files:
         local_path = os.path.join(str(artifact_config.local_dir), f)
         if os.path.isdir(local_path) and not os.listdir(local_path):
-          print(f"Skipping upload of empty directory local_path")
+          print(f"Skipping upload of empty directory local_path {local_path}")
           continue
         print(f"Exporting {f} to GCS {artifact_config.gcs_dir}")
         subprocess.run(
@@ -130,6 +138,7 @@ class Workload(abc.ABC):
   def get_workload_task(self) -> WorkloadTask:
     raise NotImplementedError
 
+  # TODO - figure out what to about results and its type
   # Right now it contains a list of returns from remotely run ray functions
   @abc.abstractmethod
   def extract_metrics(

@@ -12,3 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+from aotc.benchmark_db_writer import dataclass_bigquery_writer
+
+
+def create_bq_writer_object(project, dataset, table, dataclass_type):
+  """Creates a BQ writer config and uses it to create BQ writer object."""
+
+  config = dataclass_bigquery_writer.BigqueryWriterConfig(
+      project,
+      dataset,
+      table
+  )
+
+  writer = dataclass_bigquery_writer.DataclassBigQueryWriter(
+      dataclass_type,
+      config
+  )
+
+  return writer

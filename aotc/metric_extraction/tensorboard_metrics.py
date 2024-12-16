@@ -16,16 +16,12 @@ import dataclasses
 import logging
 from typing import Optional
 
-import numpy as np
+from aotc import metrics
+from aotc import types
+from aotc.metric_extraction import tensorboard
 import pandas as pd
 
-from aotc import metrics
-
 pd.set_option("display.max_columns", None)
-
-from . import tensorboard
-
-from .. import types
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +43,7 @@ class TensorboardMetricExtractionConfig:
 def get_metric_stats(
     df: pd.DataFrame, column_name: str, stats_slice: slice = slice(0, None)
 ) -> Optional[metrics.MetricStats]:
-  logger.info(f"Column name and stat slice:\n{column_name=}, {stats_slice=}")
+  logger.info("Column name: %s, Stat slice: %s", column_name, stats_slice)
   values = df[column_name].to_numpy()[stats_slice]
   if values.size == 0:
     return None
@@ -92,6 +88,7 @@ def extract_tensorboard_metrics(
       df = reader.get_scalars_table(
           ignore_columns_with_substr=extract_config.ignore_columns_with_substr
       )
+      logger.info("df extracted columns: %s", df.columns)
     # try extracting convergence metrics
     df_convergence = None
     if (
@@ -102,9 +99,12 @@ def extract_tensorboard_metrics(
           extract_config.ignore_columns_with_substr
       )
   except Exception as e:
-    logger.exception("Failed to extract metrics from tensorboard")
+    logger.exception("Failed to extract metrics from tensorboard: %s", repr(e))
     return metrics.WorkloadMetrics()
-  logger.info(f"First 10 rows of metrics:\n{df.columns}\n{df.head(10)}")
+
+  logger.info("Metrics DataFrame columns: %s", df.columns)
+  logger.info("First 10 rows of metrics:\n%s", df.head(10))
+
   steps_stats = get_metric_stats(df, extract_config.step_name)
   warmup_iter = None
   if extract_config.stats_config:
@@ -135,7 +135,7 @@ def extract_tensorboard_metrics(
       if len(out_metrics) == 1:
         eval_score_metric_1 = out_metrics[0]
       elif len(out_metrics) == 2:
-        eval_score_metric_1, eval_score_metric_2 = out_metrics
+        eval_score_metric_1, eval_score_metric_2 = out_metrics[0], out_metrics[1]
 
   return metrics.WorkloadMetrics(
       warmup_iter=warmup_iter,
@@ -145,15 +145,17 @@ def extract_tensorboard_metrics(
           extract_config.iteration_time_metric,
           stats_slice=stats_slice,
       ),
-      throughput=None
-      if extract_config.throughput_metric is None
-      else get_metric_stats(
-          df, extract_config.throughput_metric, stats_slice=stats_slice
+      throughput=(
+          get_metric_stats(df, extract_config.throughput_metric, stats_slice=stats_slice)
+          if extract_config.throughput_metric
+          else None
       ),
       mem_usage_bytes=mem_usage_stats,
-      loss=None
-      if extract_config.loss_metrics is None
-      else get_metric_stats(df, extract_config.loss_metrics),
+      loss=(
+          get_metric_stats(df, extract_config.loss_metrics)
+          if extract_config.loss_metrics
+          else None
+      ),
       metrics_accuracy_1=eval_score_metric_1,
       metrics_accuracy_2=eval_score_metric_2,
   )

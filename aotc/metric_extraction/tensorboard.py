@@ -13,28 +13,37 @@
 # limitations under the License.
 #
 
-""" Simple class to aid reading metrics from tensorboard. """
+"""Simple class to aid reading metrics from tensorboard."""
+import logging
 from typing import Optional
 
 import pandas as pd
-from tensorboard.backend.event_processing.event_accumulator import EventAccumulator #from tensorflow.core.util import event_pb2
+# from tensorflow.core.util import event_pb2
+from tensorboard.backend.event_processing import event_accumulator
+
+logger = logging.getLogger(__name__)
 
 # requires either:
 # 1) tensorflow or (fsspec and gcsfs)
+
 
 class TensorboardReader:
   """Simple class that loads the results from a tensorboard log directory and returns the per-step metrics as a pandas dataframe."""
 
   def __init__(self, path):
-    """Loads the results at the given path or returns an exception"""
-    self.event_acc = EventAccumulator(path)
+    """Loads the results at the given path or returns an exception."""
+    self.event_acc = event_accumulator.EventAccumulator(path)
     self.event_acc.Reload()
+    logger.info("Path given to TensorboardReader: %s", path)
 
   # per step metrics
   def get_scalars_table(self, ignore_columns_with_substr: Optional[str] = None):
     """Returns the scalar metrics of the tensorboard as a pandas dataframe."""
     row_by_step = {}
+    self.event_acc.Reload()
+    logger.info("Scalers: %s", self.event_acc.Tags())
     for metric in self.event_acc.Tags()["scalars"]:
+      logger.info("metric: %s", metric)
       if ignore_columns_with_substr and ignore_columns_with_substr in metric:
         continue
       event_list = self.event_acc.Scalars(metric)

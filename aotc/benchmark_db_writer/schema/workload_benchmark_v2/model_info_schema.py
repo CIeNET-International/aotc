@@ -12,3 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+import dataclasses
+import datetime
+from typing import Optional
+
+
+@dataclasses.dataclass
+class ModelInfo:
+  model_id: str
+  name: str
+  variant: str
+  parameter_size_in_billions: int
+  update_person_ldap: str
+  description: Optional[str] = ""
+  details: Optional[str] = ""
+  update_timestamp: datetime.datetime = datetime.datetime.now()

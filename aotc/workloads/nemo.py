@@ -21,7 +21,8 @@ import pprint
 import traceback
 from typing import List, Optional
 from aotc import gpu_utils
-from aotc import metric_extraction
+from aotc.metric_extraction import tensorboard
+from aotc.metric_extraction import tensorboard_metrics
 from aotc import metrics as aotc_metrics
 from aotc import types
 from aotc import utils
@@ -30,6 +31,8 @@ import omegaconf
 import yaml
 
 logger = logging.getLogger(__name__)
+# Define the custom resolver
+omegaconf.OmegaConf.register_new_resolver("multiply", lambda x, y: x * y)
 
 
 @dataclasses.dataclass
@@ -144,6 +147,8 @@ def get_nemo_config(base_config: types.WorkloadConfig) -> NemoWorkloadConfig:
   base_config.artifact_config.tensorboard_dir = (
       base_config.artifact_config.gcs_dir + "/tensorboard"
   )
+
+  logger.info("Nemo conf: %s", pprint.pformat(conf))
 
   return NemoWorkloadConfig(
       **base_config.shallow_dict(),
@@ -286,8 +291,8 @@ class NemoWorkloadTask(workload.WorkloadTask):
     if local_dir and distributed_task_info.rank == 0:
       self._dump_configs(local_dir)
 
-    gpus_per_nodes = os.environ.get("GPUS_PER_NODE")
-    if not gpus_per_nodes:
+    gpus_per_node = os.environ.get("GPUS_PER_NODE")
+    if not gpus_per_node:
       raise ValueError("GPUS_PER_NODE not set")
 
     # By default, Ray will set CUDA_VISIBLE_DEVICES to 1 GPU per task, but NeMo
@@ -296,7 +301,7 @@ class NemoWorkloadTask(workload.WorkloadTask):
     # or indirectly from the nemo imports). This is because the CUDA_VISIBLE_DEVICES
     # is read during torch import and modifying it afterwards has no effect.
     os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(
-        str(i) for i in range(int(gpus_per_nodes))
+        str(i) for i in range(int(gpus_per_node))
     )
 
     import time
@@ -323,6 +328,18 @@ class NemoWorkloadTask(workload.WorkloadTask):
 
     # NeMo/examples/nlp/language_modeling/megatron_gpt_pretraining.py
     trainer = MegatronTrainerBuilder(cfg).create_trainer()
+
+    mem_profile_config = omegaconf.OmegaConf.select(cfg, "model.mem_profile")
+    if mem_profile_config and mem_profile_config.enabled:
+      from aotc.workloads.nemo_callbacks.memory_profiler import MemoryProfileCallback
+      trainer.callbacks.append(
+          MemoryProfileCallback(
+              dir=os.path.join(local_dir, "mem_profile"),
+              warn_cycles=mem_profile_config.get("warn_cycles", False),
+              ranks=mem_profile_config.ranks,
+          )
+      )
+
     exp_manager(trainer, cfg.exp_manager)
     model = MegatronGPTModel(cfg.model, trainer)
 
@@ -336,6 +353,7 @@ class NemoWorkloadTask(workload.WorkloadTask):
         seq_length=seq_length,
         padded_vocab_size=padded_vocab_size,
     )
+    world_size = distributed_task_info.num_nodes*int(gpus_per_node)
 
     trainer.fit(model)
 
@@ -343,6 +361,7 @@ class NemoWorkloadTask(workload.WorkloadTask):
         "flops": flops,
         "global_batch_size": batch_size,
         "seq_length": seq_length,
+        "world_size": world_size,
     }
 
     if distributed_task_info.rank == 0:
@@ -380,14 +399,14 @@ class NemoWorkload(workload.Workload):
       )
       return None
     extract_config = (
-        metric_extraction.tensorboard_metrics.TensorboardMetricExtractionConfig(
+        tensorboard_metrics.TensorboardMetricExtractionConfig(
             stats_config=self.config.workload.metrics_config,
             iteration_time_metric="train_step_timing in s",
             step_name="step",
         )
     )
     try:
-      reader = metric_extraction.tensorboard.TensorboardReader(tensorboard_dir)
+      reader = tensorboard.TensorboardReader(tensorboard_dir)
       df = reader.get_scalars_table()
       if flops:
         # augment with "throughput"
@@ -397,7 +416,7 @@ class NemoWorkload(workload.Workload):
         extract_config.throughput_metric = "throughput"
 
       metrics = (
-          metric_extraction.tensorboard_metrics.extract_tensorboard_metrics(
+          tensorboard_metrics.extract_tensorboard_metrics(
               tensorboard_dir, extract_config=extract_config, df=df
           )
       )
@@ -442,10 +461,15 @@ class NemoWorkload(workload.Workload):
           mean=tokens_per_iter / metrics.iteration_time.mean
       )
 
+    precision = self.config.nemo.conf.trainer.precision
+    # for nemo, currently "fp8" is enabled through transformer engine.
+    if self.config.nemo.conf.model.transformer_engine and self.config.nemo.conf.model.fp8:
+        precision = "fp8"
+
     # Add some metrics to write to bigquery table
     metrics.global_batch_size = model_params.global_batch_size
     metrics.seq_length = model_params.seq_length
-    metrics.precision = self.config.nemo.conf.trainer.precision
+    metrics.precision = precision
     metrics.optimizer = self.config.nemo.conf.model.optim.name
 
     return metrics

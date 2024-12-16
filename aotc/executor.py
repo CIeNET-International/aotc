@@ -37,6 +37,7 @@ class StandaloneExecutor:
   def __init__(self):
     self.standalone_task: workload.WorkloadTask
 
+    # TODO: read in values from somewhere, environment or args
     # Maybe once a Mantaray run starts, it can generate a yaml with all these
     # values that can be added to helm template and read in
 
@@ -162,6 +163,7 @@ class StandaloneExecutor:
     return env
 
 
+  # TODO: Push results to bucket
   def _log_result(self, result: Dict[str,float]):
     logger.info("_log_result not Implemented")
 
@@ -183,6 +185,8 @@ class StandaloneExecutor:
 
   def run(self):
     # read environment variables
+    # TODO: We may need to do something different for JAX on GPU.
+    # TODO: Will need TPU standalone executor as well probably.
     local_rank = int(os.getenv("LOCAL_RANK",0))
     gpus_per_node = int(os.environ["GPUS_PER_NODE"])
     node_index = int(os.environ["JOB_COMPLETION_INDEX"])

@@ -167,6 +167,7 @@ class MetricsConfig:
   stats_to_step: Optional[int] = None
 
 
+# TODO: Clean this up
 @dataclasses.dataclass
 class WorkloadInfo:
   framework: str  # name of workload type (megatronlm, pytorch, pax)

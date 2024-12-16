@@ -12,3 +12,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+import dataclasses
+import datetime
+from typing import Optional
+
+
+@dataclasses.dataclass
+class HardwareInfo:
+  hardware_id: str
+  gcp_accelerator_name: str
+  chip_name: str
+  bf_16_tflops: int
+  memory: float
+  hardware_type: str
+  provider_name: str
+  update_person_ldap: str
+  chips_per_node: Optional[int] = None
+  description: Optional[str] = ""
+  other: Optional[str] = ""
+  update_timestamp: datetime.datetime = datetime.datetime.now()
