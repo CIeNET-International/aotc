@@ -1,0 +1,29 @@
+[project]
+name = "aotc"
+version = "0.0.1"
+description = "Standalone AI Workload Library For Reproducibility"
+readme = {file = "README.md", content-type = "text/markdown"}
+authors = [{name = "Map Perf Tooling Team", email = "map-perf-tooling@google.com"}]
+maintainers = []
+# Dependencies for `aotc` that aren't related to the framework
+dependencies = [
+  "numpy<2.0",
+  "omegaconf",
+  "pandas",
+  "tensorboard"
+]
+
+####################################################################
+# NOTE: this does not include workload specific dependencies:
+#  e.g. pytorch, tensorflow, jax, xla, etc
+# These are expected to exist in the base-docker containers.
+####################################################################
+[tool.setuptools.package-data]
+"aotc" = ["**/*.py", "**/*.yaml", "**/*.yaml.j2", "**/*.conf", "**/*.sh", "**/*.conf.j2"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["aotc"]
+
+[tool.distutils.bdist_wheel]
+universal = true

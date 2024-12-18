@@ -414,7 +414,7 @@ class NemoWorkload(workload.Workload):
             df["train_step_timing in s"] * 10**12 * world_size
         )
         extract_config.throughput_metric = "throughput"
-
+      logger.info(df)
       metrics = (
           tensorboard_metrics.extract_tensorboard_metrics(
               tensorboard_dir, extract_config=extract_config, df=df
