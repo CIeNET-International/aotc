@@ -1,0 +1,40 @@
+[project]
+name = "benchmark_db_writer"
+dynamic = ["version"]
+description = "Database Utility library for benchmark automation"
+readme = {file = "README.md", content-type = "text/markdown"}
+requires-python = ">=3.10"
+authors = [
+    {name = "Map Perf Tooling Team", email = "map-perf-tooling@google.com"},
+    {name = "Neel Choudhury", email = "cneel@google.com"},
+    {name = "Utkarsh Sharma", email = "utksharma@google.com"}
+]
+maintainers = [
+    {name = "Neel Choudhury", email = "cneel@google.com"},
+    {name = "Utkarsh Sharma", email = "utksharma@google.com"}
+]
+# Dependencies for `benchmark_db_writer` that aren't related to the framework
+dependencies = [
+  "numpy",
+  "omegaconf",
+  "google-cloud-bigquery"
+]
+
+####################################################################
+# NOTE: this does not include workload specific dependencies:
+#  e.g. pytorch, tensorflow, jax, xla, etc
+# These are expected to exist in the base-docker containers.
+####################################################################
+[tool.setuptools.package-data]
+"benchmark_db_writer" = ["**/*.py", "**/*.yaml", "**/*.yaml.j2", "**/*.conf", "**/*.sh", "**/*.conf.j2"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["benchmark_db_writer"]
+
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.dynamic]
+version = {attr = "benchmark_db_writer.__version__"}
