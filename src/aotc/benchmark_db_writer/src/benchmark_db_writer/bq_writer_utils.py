@@ -31,8 +31,8 @@ def get_db_client(
     A BigQuery client object.
   """
 
-  project = "supercomputer-testing" if is_test else "ml-workload-benchmarks"
-  dataset = "mantaray_v2" if is_test else "benchmark_dataset_v2"
+  project = "cloud-tpu-multipod-dev" if is_test else "ml-workload-benchmarks"
+  dataset = "benchmark_dataset" if is_test else "benchmark_dataset_v2"
   return create_bq_writer_object(
       project=project,
       dataset=dataset,
